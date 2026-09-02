@@ -1,0 +1,23 @@
+WarningsAsErrors: '*'
+
+Checks: '*,
+  
+  -altera-*,
+  -llvmlibc-*,
+  
+  -*-braces-around-statements,
+  -*-magic-numbers,
+  -*-vararg,  
+  
+  -cppcoreguidelines-pro-type-union-access,
+  -fuchsia-default-arguments-calls,
+  -fuchsia-default-arguments-declarations,
+  -google-runtime-int,
+  -llvm-header-guard,
+  -misc-include-cleaner,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length
+'
+
+CheckOptions:
+  misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic: true

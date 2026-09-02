@@ -1,0 +1,60 @@
+name: Local Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  local-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install extra packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lcov rustc strace
+          gcc --version
+          rustc --version
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Python checks
+        run: |
+          uv sync
+          uv run ruff check .
+          uv run mypy .
+          uv run ty check
+
+      - name: Compile and lint
+        run: |
+          cmake .
+          make -j$(nproc)
+          make -j$(nproc) sandbox_coverage
+          clang-tidy src/*.{h,cpp}
+
+      - name: Run tests
+        run: |
+          ulimit -a
+          uv run pytest -v tests
+
+      - name: Generate coverage report
+        run: |
+          lcov --capture --directory . --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' --output-file coverage.info
+          genhtml coverage.info --output-directory coverage_report
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: coverage_report
