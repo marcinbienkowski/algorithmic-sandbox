@@ -39,6 +39,7 @@ namespace Config {
             {SYS_futex, {{1, FUTEX_WAKE_PRIVATE}}},
             {SYS_getpid, {}},
             {SYS_getrandom, {{2, GRND_NONBLOCK}}},
+            {SYS_getrandom, {{2, GRND_INSECURE}}},
             {SYS_gettid, {}},
             {SYS_lseek, {{0, STDIN_FILENO}}},
             {SYS_munmap, {}},

@@ -158,6 +158,10 @@ def test_prog_file_access_allowed() -> None:
     run_test('prog_file_access_allowed.cpp')
 
 
+def test_prog_hash_set() -> None:
+    run_test('prog_hash_set.rs')
+
+
 def test_prog_hello_world() -> None:
     run_test('prog_hello_world.cpp')
 
