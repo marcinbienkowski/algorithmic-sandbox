@@ -227,7 +227,7 @@ def test_prog_recursive_fibonacci() -> None:
     run_test('prog_recursive_fibonacci.cpp', expected_exit_codes=[EXIT_TIMEOUT], min_time=500, max_time=510)
 
 
-# EXIT_OK on gcc 12, SIGABRT on gcc 13
+# SIGABRT with gcc 13, EXIT_OK with gcc 14
 def test_prog_ret2libc() -> None:
     run_test('prog_ret2libc.cpp', expected_exit_codes=[(1, signal.SIGABRT), EXIT_OK], ignore_stderr=True)
 
@@ -284,8 +284,9 @@ def test_prog_file_access_forbidden() -> None:
     run_test('prog_file_access_forbidden.cpp', expected_exit_codes=[(2, _syscall_nr('openat'))])
 
 
+# SYS_sigprocmask on glibc >= 2.41, SYS_clone on older glibc.
 def test_prog_fork() -> None:
-    run_test('prog_fork.cpp', expected_exit_codes=[(2, _syscall_nr('clone'))])
+    run_test('prog_fork.cpp', expected_exit_codes=[(2, _syscall_nr('clone')), (2, _syscall_nr('rt_sigprocmask'))])
 
 
 def test_prog_getrlimit() -> None:
