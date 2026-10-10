@@ -7,7 +7,6 @@
 #include <array>
 #include <bit>
 #include <climits>
-#include <cstdint>
 #include <ranges>
 #include <span>
 #include <sys/ptrace.h>

@@ -5,17 +5,13 @@
 #include "parameters.h"
 #include <array>
 #include <cmath>
-#include <csignal>
 #include <cstddef>
-#include <cstdint>
 #include <linux/audit.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
-#include <unistd.h>
 #include <utility>
-#include <vector>
 
 
 extern "C" void __gcov_dump(void);  // NOLINT
@@ -107,7 +103,7 @@ public:
         std::string binary_path = params.program_binary;
         const std::array<char*, 2> args = {binary_path.data(), nullptr};
         flush_coverage();
-        enforce(execve(params.program_binary.c_str(), args.data(), nullptr) == 0, SIGKILL);  // LCOV_EXCL_LINE
+        enforce(execve(args[0], args.data(), nullptr) == 0, SIGKILL);  // LCOV_EXCL_LINE
     }  // LCOV_EXCL_LINE
 };
 

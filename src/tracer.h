@@ -3,19 +3,13 @@
 
 #include "parameters.h"
 #include "syscall.h"
-#include <algorithm>
-#include <array>
-#include <csignal>
-#include <cstdint>
-#include <cstring>
+#include <atomic>
+#include <charconv>
 #include <ctime>
-#include <fcntl.h>
-#include <format>
 #include <fstream>
 #include <iostream>
-#include <span>
+#include <memory>
 #include <sys/wait.h>
-#include <unistd.h>
 
 
 class Tracer {
@@ -24,43 +18,41 @@ class Tracer {
     bool debug_mode;
     pid_t pid;
     unsigned long time_limit_in_ms;
-    int memory_usage_in_kb = 0;
 
     static inline int status_fd = -1;  // /proc/<pid>/status of the tracee
-    static inline volatile std::sig_atomic_t watchdog_fired = 0;
-    static inline volatile std::sig_atomic_t watchdog_kill_errno = 0;
-    static inline volatile std::sig_atomic_t watchdog_memory_usage_in_kb = 0;  // apart from memory_usage_in_kb, which the handler could overwrite mid-update
+    static_assert(std::atomic<bool>::is_always_lock_free and std::atomic<int>::is_always_lock_free);  // signal safety
+    static inline std::atomic<bool> watchdog_fired = false;
+    static inline std::atomic<int> watchdog_kill_errno = 0;
+    static inline std::atomic<int> memory_usage_in_kb = 0;
 
-    // Async-signal-safe for the watchdog. Returns 0 once the tracee is gone: a zombie has no VmPeak line.
-    [[nodiscard]] static int read_vm_peak_in_kb() {
-        std::array<char, 4096> status = {};  // VmPeak sits in the first lines
-        if (pread(status_fd, status.data(), status.size() - 1, 0) <= 0)
-            return 0;
-        const char* const key = strstr(status.data(), "VmPeak:");
-        if (key == nullptr)
-            return 0;
+    // Async-signal-safe for the watchdog. Keeps the largest reading: VmPeak never shrinks.
+    // Failed pread() or a zombie tracee (no VmPeak line) leaves the value unchanged.
+    static void update_memory_usage() {
+        std::array<char, 4096> buffer = {};
+        const ssize_t length = pread(status_fd, buffer.data(), buffer.size(), 0);
+        const std::string_view status(buffer.data(), length > 0 ? static_cast<size_t>(length) : 0);
+        const size_t value_pos = status.find_first_of("0123456789", status.find("VmPeak:"));
+        if (value_pos == std::string_view::npos)
+            return;
+        const std::string_view value = status.substr(value_pos);
         int vm_peak_in_kb = 0;
-        for (const char c: std::span(status).subspan(static_cast<size_t>(key - status.data()) + strlen("VmPeak:"))) {
-            if (c >= '0' and c <= '9')
-                vm_peak_in_kb = (vm_peak_in_kb * 10) + (c - '0');
-            else if (c != ' ' and c != '\t')
-                break;
-        }
-        return vm_peak_in_kb;
+        std::from_chars(std::to_address(value.begin()), std::to_address(value.end()), vm_peak_in_kb);
+        if (memory_usage_in_kb < vm_peak_in_kb)
+            memory_usage_in_kb = vm_peak_in_kb;
     }
 
     static void handle_timeout(int /*signal*/, siginfo_t* info, void* /*context*/) {
         const int saved_errno = errno;  // errno of code interrupted by SIGPROF
-        watchdog_fired = 1;
-        watchdog_memory_usage_in_kb = read_vm_peak_in_kb();  // the SIGKILL below may skip PTRACE_EVENT_EXIT
+        watchdog_fired = true;
+        update_memory_usage();  // the SIGKILL below may skip PTRACE_EVENT_EXIT
         if (kill(info->si_value.sival_int, SIGKILL) < 0)
             watchdog_kill_errno = errno;
         errno = saved_errno;
     }
 
-    void log(const std::string& s) const { if (debug_mode) std::cerr << std::format("TRACEE PID = {}: {}\n", pid, s); }
+    void log(std::string_view s) const { if (debug_mode) std::cerr << std::format("TRACEE PID = {}: {}\n", pid, s); }
 
-    void ptrace_ignore_tracee_death(int request, long data, const std::string& error_string) const {
+    void ptrace_ignore_tracee_death(int request, long data, std::string_view error_string) const {
         errno = 0;
         const long result = ptrace(static_cast<__ptrace_request>(request), pid, 0, data);
         Util::ensure(result >= 0 or errno == ESRCH, error_string);
@@ -68,30 +60,24 @@ class Tracer {
 
     enum class ptrace_event: std::uint8_t { signal, exit, seccomp };
 
-    void read_memory_usage() {
-        const int vm_peak_in_kb = read_vm_peak_in_kb();
-        if (vm_peak_in_kb == 0) {
-            log("Could not read VmPeak; the tracee is already gone");
-            return;
-        }
-        memory_usage_in_kb = vm_peak_in_kb;
-        log(std::format("Current memory usage {} KB", memory_usage_in_kb));
+    void read_memory_usage() const {
+        update_memory_usage();
+        log(std::format("Memory usage so far {} KB", memory_usage_in_kb.load()));
     }
 
-    void finalize_tracee(std::pair<int, int> code_subcode, long time_usage, bool terminate_tracee, const std::string& description = "") {
+    void finalize_tracee(std::pair<int, int> code_subcode, long time_usage, bool terminate_tracee, std::string_view description = "") {
         if (terminate_tracee) {
-            log("Terminating tracee due to " + description);
+            log(std::format("Terminating tracee due to {}", description));
             read_memory_usage();
             if (kill(pid, SIGKILL) < 0)
                 Util::ensure(errno == ESRCH, "kill");
         }
-        memory_usage_in_kb = std::max(memory_usage_in_kb, static_cast<int>(watchdog_memory_usage_in_kb));
         if (memory_usage_in_kb == 0)
             log("No memory reading was ever taken; reporting 0 KB");
         std::ofstream file;
         file.exceptions(std::fstream::failbit | std::fstream::badbit);
         file.open(result_file, std::fstream::out);
-        file << std::format("{} {} {} {}\n", code_subcode.first, code_subcode.second, time_usage, memory_usage_in_kb);
+        file << std::format("{} {} {} {}\n", code_subcode.first, code_subcode.second, time_usage, memory_usage_in_kb.load());
         file.close();
     }
 
@@ -215,7 +201,7 @@ public:
         if (WIFSIGNALED(status)) {
             const int term_sig = WTERMSIG(status);
             if (term_sig == SIGKILL) {
-                Util::ensure(watchdog_fired != 0, "SIGKILL");
+                Util::ensure(watchdog_fired, "SIGKILL");
                 log("Tracee killed by the CPU-time watchdog");
                 finalize_tracee({1, SIGPROF}, time_usage, false);
                 return false;
