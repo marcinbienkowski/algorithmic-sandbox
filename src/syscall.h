@@ -60,12 +60,6 @@ public:
 
     [[nodiscard]] int get_id() const { return static_cast<int>(syscall.seccomp.nr); }
 
-    // The syscalls that can grow VmPeak
-    [[nodiscard]] bool is_memory_related() const {
-        const int id = get_id();
-        return id == SYS_mmap or id == SYS_brk or id == SYS_mremap;
-    }
-
     [[nodiscard]] bool read_syscall() {
         // SIGKILL (from our timeout watchdog, or other source) may arrive when tracee is in ptrace-stop.
         // SIGKILL will not generate signal-delivery-stop, so there will be no PTRACE_EVENT_EXIT.

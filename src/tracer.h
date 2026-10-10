@@ -3,13 +3,19 @@
 
 #include "parameters.h"
 #include "syscall.h"
+#include <algorithm>
+#include <array>
 #include <csignal>
 #include <cstdint>
+#include <cstring>
 #include <ctime>
+#include <fcntl.h>
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <sys/wait.h>
+#include <unistd.h>
 
 
 class Tracer {
@@ -20,18 +26,38 @@ class Tracer {
     unsigned long time_limit_in_ms;
     int memory_usage_in_kb = 0;
 
+    static inline int status_fd = -1;  // /proc/<pid>/status of the tracee
     static inline volatile std::sig_atomic_t watchdog_fired = 0;
     static inline volatile std::sig_atomic_t watchdog_kill_errno = 0;
+    static inline volatile std::sig_atomic_t watchdog_memory_usage_in_kb = 0;  // apart from memory_usage_in_kb, which the handler could overwrite mid-update
+
+    // Async-signal-safe for the watchdog. Returns 0 once the tracee is gone: a zombie has no VmPeak line.
+    [[nodiscard]] static int read_vm_peak_in_kb() {
+        std::array<char, 4096> status = {};  // VmPeak sits in the first lines
+        if (pread(status_fd, status.data(), status.size() - 1, 0) <= 0)
+            return 0;
+        const char* const key = strstr(status.data(), "VmPeak:");
+        if (key == nullptr)
+            return 0;
+        int vm_peak_in_kb = 0;
+        for (const char c: std::span(status).subspan(static_cast<size_t>(key - status.data()) + strlen("VmPeak:"))) {
+            if (c >= '0' and c <= '9')
+                vm_peak_in_kb = (vm_peak_in_kb * 10) + (c - '0');
+            else if (c != ' ' and c != '\t')
+                break;
+        }
+        return vm_peak_in_kb;
+    }
 
     static void handle_timeout(int /*signal*/, siginfo_t* info, void* /*context*/) {
         const int saved_errno = errno;  // errno of code interrupted by SIGPROF
         watchdog_fired = 1;
+        watchdog_memory_usage_in_kb = read_vm_peak_in_kb();  // the SIGKILL below may skip PTRACE_EVENT_EXIT
         if (kill(info->si_value.sival_int, SIGKILL) < 0)
             watchdog_kill_errno = errno;
         errno = saved_errno;
     }
 
-    template<typename T> static T stream_get(std::ifstream& f) { T v; f >> v; return v; }
     void log(const std::string& s) const { if (debug_mode) std::cerr << std::format("TRACEE PID = {}: {}\n", pid, s); }
 
     void ptrace_ignore_tracee_death(int request, long data, const std::string& error_string) const {
@@ -42,18 +68,13 @@ class Tracer {
 
     enum class ptrace_event: std::uint8_t { signal, exit, seccomp };
 
-    // Opportunistic read as the tracee may die with SIGKILL at any point.
     void read_memory_usage() {
-        try {
-            std::ifstream input;
-            input.exceptions(std::fstream::failbit | std::fstream::badbit);
-            input.open("/proc/" + std::to_string(pid) + "/status");
-            while (stream_get<std::string>(input) != "VmPeak:") {}
-            memory_usage_in_kb = stream_get<int>(input);
-        } catch (const std::ios_base::failure&) {
+        const int vm_peak_in_kb = read_vm_peak_in_kb();
+        if (vm_peak_in_kb == 0) {
             log("Could not read VmPeak; the tracee is already gone");
             return;
         }
+        memory_usage_in_kb = vm_peak_in_kb;
         log(std::format("Current memory usage {} KB", memory_usage_in_kb));
     }
 
@@ -64,6 +85,7 @@ class Tracer {
             if (kill(pid, SIGKILL) < 0)
                 Util::ensure(errno == ESRCH, "kill");
         }
+        memory_usage_in_kb = std::max(memory_usage_in_kb, static_cast<int>(watchdog_memory_usage_in_kb));
         if (memory_usage_in_kb == 0)
             log("No memory reading was ever taken; reporting 0 KB");
         std::ofstream file;
@@ -94,23 +116,25 @@ class Tracer {
         };
     }
 
-    void let_tracee_continue(int signal, int request = PTRACE_CONT) const {
-        ptrace_ignore_tracee_death(request, signal, request == PTRACE_SYSCALL ? "PTRACE_SYSCALL" : "PTRACE_CONT");
+    void let_tracee_continue(int signal) const {
+        ptrace_ignore_tracee_death(PTRACE_CONT, signal, "PTRACE_CONT");
     }
 
-    // Returns {syscall allowed, syscall is memory-related}.
-    std::pair<bool, bool> process_syscall() {
+    // Returns true if the syscall is allowed.
+    bool process_syscall() {
         if (syscall_handler.read_syscall()) {
             log(syscall_handler.syscall_to_string());
-            return {syscall_handler.is_allowed(), syscall_handler.is_memory_related()};
+            return syscall_handler.is_allowed();
         }
         log("Tracee was killed in seccomp stop");
-        read_memory_usage();  // tracee may not survive the reading
-        return {true, false};
+        return true;
     }
 
     // Arms timer for the tracee
     void arm_timeout_timer() const {
+        status_fd = open(std::format("/proc/{}/status", pid).c_str(), O_RDONLY | O_CLOEXEC);  // before the handler can run
+        Util::ensure(status_fd >= 0, "open /proc/<pid>/status");
+
         struct sigaction sa = {};
         sa.sa_sigaction = &handle_timeout;
         sa.sa_flags = SA_SIGINFO | SA_RESTART;
@@ -146,7 +170,7 @@ public:
         }
         Util::ensure(WIFSTOPPED(sync_status) and WSTOPSIG(sync_status) == SIGSTOP, "initial sync");
         log("Tracee reached initial sync");
-        ptrace_ignore_tracee_death(PTRACE_SETOPTIONS, PTRACE_O_TRACEEXIT | PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP | PTRACE_O_TRACESYSGOOD, "PTRACE_SETOPTIONS");
+        ptrace_ignore_tracee_death(PTRACE_SETOPTIONS, PTRACE_O_TRACEEXIT | PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP, "PTRACE_SETOPTIONS");
         ptrace_ignore_tracee_death(PTRACE_CONT, 0, "PTRACE_CONT");    // run till execve()
 
         // Ignore all syscalls before running actual program, including execve() call.
@@ -208,25 +232,17 @@ public:
                 let_tracee_continue(0);
                 break;
 
-            case ptrace_event::seccomp: {
-                const auto [is_allowed, is_memory_related] = process_syscall();
-                if (not is_allowed) {
+            case ptrace_event::seccomp:
+                if (not process_syscall()) {
                     const int syscall_id = syscall_handler.get_id();
                     finalize_tracee({2, syscall_id}, time_usage, true, std::format("disallowed syscall {}", syscall_id));
                     return false;
                 }
-                let_tracee_continue(0, is_memory_related ? PTRACE_SYSCALL : PTRACE_CONT);  // Catch the exit of memory syscalls
+                let_tracee_continue(0);
                 break;
-            }
 
             case ptrace_event::signal: {
                 const int signal = WSTOPSIG(status);
-                if (signal == (SIGTRAP | 0x80)) {
-                    log("Tracee exited a memory-related syscall");
-                    read_memory_usage();
-                    let_tracee_continue(0);
-                    break;
-                }
                 log(std::format("Tracer catches signal {} and passes to tracee", signal));
                 let_tracee_continue(signal);
                 break;
