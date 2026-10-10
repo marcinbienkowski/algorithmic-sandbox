@@ -42,6 +42,7 @@ namespace Config {
             {SYS_getrandom, {{2, GRND_INSECURE}}},
             {SYS_gettid, {}},
             {SYS_lseek, {{0, STDIN_FILENO}}},
+            {SYS_lseek, {{0, 3}}},
             {SYS_munmap, {}},
             {SYS_poll, {{2, 0}}},
             {SYS_prlimit64, {{0, 0}, {1, RLIMIT_STACK}, {2, 0}}},

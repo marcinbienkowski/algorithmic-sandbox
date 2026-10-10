@@ -18,6 +18,7 @@ covering error paths outside the seccomp/ptrace machinery:
   `PTRACE_TRACEME` fails because the process is already traced
 - `test_sandbox_internal_error_unwritable_result_file` - Points the result file at a nonexistent
   directory
+- `test_sandbox_closes_inherited_fds` - Runs a Rust program with an inherited fd 3, Rust would lseek in fd 4 then
 
 ### These programs should execute normally
 

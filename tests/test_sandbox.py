@@ -66,7 +66,7 @@ def assert_internal_error(sp: subprocess.CompletedProcess[str], result_file: Pat
 
 
 def compile_and_run(source_file: Path, input_file: Path, memory_limit: int, time_limit_in_ms: int,
-                    executable: str) -> tuple[list[int], str, str]:
+                    executable: str, *, wrapper: list[str] | None = None) -> tuple[list[int], str, str]:
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         (temp_path / 'empty_file').touch()
@@ -74,7 +74,7 @@ def compile_and_run(source_file: Path, input_file: Path, memory_limit: int, time
         compile_in_tempdir(temp_path, source_file)
         with input_file.open() as file:
             sp = run_sandbox_raw(temp_path / executable, temp_path / 'result', memory_limit, time_limit_in_ms,
-                                stdin=file, print_debug=tests_options.debug_mode)
+                                stdin=file, print_debug=tests_options.debug_mode, wrapper=wrapper)
             sp.check_returncode()
         with (temp_path / 'result').open() as result:
             match = re.search(r'(-?\d+) (-?\d+) (\d+) (\d+)', result.read())
@@ -88,12 +88,12 @@ def run_test(source_file: str, *, expected_exit_codes: list[tuple[int, int]] | N
              memory_limit: int = 16 * 1024, time_limit: int = 500,
              min_time: int = 0, max_time: int = 100, min_memory: int = 768, max_memory: int = 3000,
              input_file: str = 'empty.txt', expected_output_file: str | None = None,
-             executable: str = 'code', ignore_stderr: bool = False) -> None:
+             executable: str = 'code', ignore_stderr: bool = False, wrapper: list[str] | None = None) -> None:
     if expected_exit_codes is None:
         expected_exit_codes = [EXIT_OK]
     path = Path.cwd() / 'tests'
     res, output_stdout, output_stderr = compile_and_run(path / 'programs' / source_file, path / 'in_out' / input_file,
-                                                        memory_limit, time_limit, executable)
+                                                        memory_limit, time_limit, executable, wrapper=wrapper)
     if tests_options.debug_mode:
         print(output_stderr, file=sys.stderr)
     if not ignore_stderr and not tests_options.debug_mode:
@@ -146,6 +146,11 @@ def test_sandbox_internal_error_unwritable_result_file(tmp_path: Path) -> None:
     assert_internal_error(sp, result_file)
     assert sp.stderr == ''
     assert not (tmp_path / 'no_such_dir').exists()
+
+
+# An fd inherited at 3 would push /proc/self/maps, opened at Rust startup, off the fd where lseek() is allowed.
+def test_sandbox_closes_inherited_fds() -> None:
+    run_test('prog_fibonacci.rs', wrapper=['/bin/sh', '-c', 'exec "$@" 3</dev/null', 'sh'])
 
 
 """ These programs should execute normally """
