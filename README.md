@@ -70,7 +70,7 @@ If `print_debug` is equal to the string `true`, then additional information abou
 
 ### Input and output
 
-The sandboxed tracee inherits `stdin`, `stdout`, and `stderr` of the sandbox process. You can redirect them as needed. The sandbox itself never reads anything from `stdin`, never writes anything to `stdout`, and only writes to `stderr` if `print_debug` is set to `true`.
+The sandboxed tracee inherits `stdin`, `stdout`, and `stderr` of the sandbox process. You can redirect them as needed. The sandbox closes every other file descriptor it inherited, so the tracee cannot access them. The sandbox itself never reads anything from `stdin`, never writes anything to `stdout`, and only writes to `stderr` if `print_debug` is set to `true`.
 
 Redirect `stdin` from a regular file, and have `stdout`/`stderr` go to a regular file or a pipe that is actively drained — do not leave them attached to a terminal. There is no wall-clock limit anywhere in the sandbox, only CPU-time ones, so a blocking `read` on an empty, non-redirected `stdin` or a `write` to a full, undrained pipe hangs the tracee forever without tripping the timeout. A terminal carries a second risk on top of that: libc's startup code probes a tty via `ioctl`, a syscall that the sandbox allowlist does not include, so the tracee is killed as if it had made an illegal call (`code = 2`) through no fault of the tracee itself.
 
