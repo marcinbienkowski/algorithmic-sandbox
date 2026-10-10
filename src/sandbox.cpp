@@ -1,9 +1,5 @@
-#include "parameters.h"
 #include "subprocess.h"
 #include "tracer.h"
-#include <unistd.h>
-#include <utility>
-#include <vector>
 
 
 int main(int argc, char* argv[]) {

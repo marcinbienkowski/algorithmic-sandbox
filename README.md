@@ -5,8 +5,7 @@
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](CMakeLists.txt)
 [![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-lightgrey.svg)](#extra-caveats)
 
-A secure sandbox for running submissions to algorithmic-problem competitions (Codeforces-style, as on most online judges): untrusted binary code (referred to as "tracee" below) that reads a test case from `stdin` and writes its answer to `stdout`, executed under strict security constraints. It prevents malicious or resource-intensive tracees from affecting the host system.
-It has been **battle-tested on over 100,000 real algorithmic solutions** and has proven rock-stable in production.
+A secure sandbox for running submissions to algorithmic-problem competitions (Codeforces-style, as on most online judges): untrusted binary code (referred to as "tracee" below) that reads a test case from `stdin` and writes its answer to `stdout`, executed under strict security constraints. It prevents malicious or resource-intensive tracees from affecting the host system. It has been **battle-tested on over 100,000 real algorithmic solutions** and has proven rock-stable in production.
 
 It enforces memory and time limits. It uses a seccomp-BPF filter with `ptrace()` to monitor and restrict system calls, allowing only a safe subset. It allows tracees that perform computations and use `stdin`/`stdout`/`stderr`, and blocks everything else. In particular, it forbids operations like file access, network communication, and process creation.
 
@@ -14,6 +13,7 @@ The goal is to block malicious tracees while allowing legitimate tracees to run.
 * A malicious tracee will *always* be blocked.
 * A legitimate tracee will *usually* run uninterrupted. This holds for computational tracees written in C/C++/Rust (see example programs in `tests/programs`) that have been statically compiled. (Static compilation avoids the need for opening shared libraries at runtime, which would be blocked.)
 
+The allowlist is deliberately minimal. It admits only the syscalls that a computational tracee needs, including those the language runtime calls at startup and when reporting a crash. Being harmless is not enough for a syscall to be allowed. For example, a tracee that installs its own `SIGFPE` handler is stopped with `code = 2`, although catching `SIGFPE` does not help it bypass any limit.
 
 
 ## Usage 
@@ -57,8 +57,7 @@ If sandboxing was successful, the sandbox returns `0` and writes four numbers to
   * `-1` if the sandbox failed to start the tracee (for example, when the binary does not exist or is not executable).
 * `subcode`: exit status if `code = 0`, delivered signal if `code = 1` and syscall number if `code = 2`.
 * `time_usage` of the tracee in milliseconds.
-* `memory_usage` of the tracee in kilobytes equal to the peak virtual memory
-  allocation.
+* `memory_usage` of the tracee in kilobytes equal to the peak virtual memory allocation.
 
 If an internal error occurs, the sandbox returns `1` and the `<result_file>` contains a description of the error.  Even in such cases, the tracee will be executed safely, although it may terminate prematurely.  
 
@@ -85,10 +84,8 @@ Redirect `stdin` from a regular file, and have `stdout`/`stderr` go to a regular
 ### Memory measurement caveats
 
 * `memory_limit` (enforced via `RLIMIT_AS`) always caps what the tracee can actually allocate, independent of what gets reported.
-* The reported `memory_usage` is the peak `VmPeak` seen in `/proc/<pid>/status`, sampled around every syscall that can grow it (`mmap`/`brk`/`mremap`) and once more right before the tracee exits. 
-  * That last read is crucial, as stack growth can raise `VmPeak` through page faults, without triggering a syscall. 
-  * If the watchdog's `SIGKILL` lands while the tracee sits in an already-reaped ptrace-stop, that final pre-exit read is skipped entirely. We still try to read `VmPeak` then, but it is theoretically possible that it fails, in which case the last syscall-adjacent sample is reported instead.
-  * That final read has never been observed to fail in practice.
+* The reported `memory_usage` is the peak `VmPeak` seen in `/proc/<pid>/status`, read right before the tracee exits. This read also captures stack growth, which raises `VmPeak` through page faults without any syscall.
+* When the sandbox kills the tracee itself, on a timeout or an illegal syscall, it reads `VmPeak` right before the kill, as a killed tracee may skip the pre-exit read. On a timeout the tracee is still running at that point, so memory it allocates between this read and the kill is not reported.
 
 
 ### Extra caveats

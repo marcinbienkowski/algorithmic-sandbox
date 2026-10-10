@@ -1,23 +1,17 @@
 # Testing
 
-This document catalogs the test programs in `tests/programs/` and what each one exercises. See
-[README.md](README.md) for how to run the test suite. Sections and ordering mirror the four
-groups `tests/test_sandbox.py` itself is split into.
+This document catalogs the test programs in `tests/programs/` and what each one exercises. See [README.md](README.md) for how to run the test suite. Sections and ordering mirror the four groups `tests/test_sandbox.py` itself is split into.
 
 ### Testing sandbox with wrong arguments
 
-These tests exercise the `sandbox`/`sandbox_coverage` binary itself rather than a test program,
-covering error paths outside the seccomp/ptrace machinery:
+These tests exercise the `sandbox`/`sandbox_coverage` binary itself rather than a test program, covering error paths outside the seccomp/ptrace machinery:
 
 - `test_sandbox_no_arguments` - Invoked with no arguments; checks the usage message
 - `test_sandbox_nonexistent_file` - Targets a nonexistent executable path
 - `test_sandbox_nonexecutable_file` - Targets an empty, non-executable file
-- `test_sandbox_internal_error_on_setrlimit` - Lowers the `RLIMIT_CPU` hard limit before the
-  sandbox runs, so its own `setrlimit()` call fails
-- `test_sandbox_internal_error_on_ptrace_traceme` - Runs the sandbox under `strace`, so
-  `PTRACE_TRACEME` fails because the process is already traced
-- `test_sandbox_internal_error_unwritable_result_file` - Points the result file at a nonexistent
-  directory
+- `test_sandbox_internal_error_on_setrlimit` - Lowers the `RLIMIT_CPU` hard limit before the sandbox runs, so its own `setrlimit()` call fails
+- `test_sandbox_internal_error_on_ptrace_traceme` - Runs the sandbox under `strace`, so `PTRACE_TRACEME` fails because the process is already traced
+- `test_sandbox_internal_error_unwritable_result_file` - Points the result file at a nonexistent directory
 - `test_sandbox_closes_inherited_fds` - Runs a Rust program with an inherited fd 3, Rust would lseek in fd 4 then
 
 ### These programs should execute normally
@@ -43,16 +37,12 @@ covering error paths outside the seccomp/ptrace machinery:
 - `prog_malloc_unbounded.cpp` - Infinite memory allocation loop to test memory limit enforcement
 - `prog_recursive_fibonacci.cpp` - Tests recursive algorithm with high CPU usage
 - `prog_ret2libc.cpp` - Return-to-libc attack simulation
-- `prog_storm_fault.cpp` - The signal-delivery-stop counterpart to `prog_storm_mmap.cpp`: a
-  `SIGSEGV` handler that returns
-- `prog_storm_mmap.cpp` - Loops on `mmap()`, which keeps the tracee in a seccomp stop almost
-  continuously; incurs a `SIGKILL` that lands on an already-reaped stop. `test_prog_storm_mmap_repeated`
-  reruns it 10 times at a short time limit to raise the odds of hitting that race
+- `prog_storm_fault.cpp` - The signal-delivery-stop counterpart to `prog_storm_mmap.cpp`: a `SIGSEGV` handler that returns
+- `prog_storm_mmap.cpp` - Loops on `mmap()`, which keeps the tracee in a seccomp stop almost continuously; incurs a `SIGKILL` that lands on an already-reaped stop. That race skips the pre-exit memory read, so the reported memory comes from the watchdog's own read. `test_prog_storm_mmap_repeated` reruns it 10 times at a short time limit to raise the odds of hitting the race
 - `prog_stack_overflow.cpp` - Recursive function to trigger stack overflow protection (`SIGSEGV`)
 - `prog_stack_overflow.rs` - Rust equivalent of the above (Rust has a signal handler for it)
 - `prog_vector_growth.cpp` - Tests dynamic memory growth patterns with STL vectors
-- `prog_very_many_writes.cpp` - Like `prog_many_writes.cpp`, but with more I/O operations; checks
-  timeout precision under heavy write load
+- `prog_very_many_writes.cpp` - Like `prog_many_writes.cpp`, but with more I/O operations; checks timeout precision under heavy write load
 
 ### These programs should be blocked as they use forbidden syscalls
 
@@ -66,13 +56,11 @@ covering error paths outside the seccomp/ptrace machinery:
 - `prog_mmap_shared_stdout.cpp` - Tests whether the tracee can rewrite output already written
 - `prog_open_wrong_address.cpp` - Tests invalid memory address handling
 - `prog_open_wrong_flags.cpp` - Opens an allowlisted path with a disallowed flag (`O_RDWR`)
-- `prog_pthread.cpp` - Tests threading operations; rejected at `rt_sigaction`, before the
-  underlying `clone3` ever runs
+- `prog_pthread.cpp` - Tests threading operations; rejected at `rt_sigaction`, before the underlying `clone3` ever runs
 - `prog_readlinkat_wrong_path.cpp` - Calls `readlinkat` on a path outside the allowlist
 - `prog_self_sigabrt.cpp` - `raise(SIGABRT)`
 - `prog_self_sigprof.cpp` - `raise(SIGPROF)`
 - `prog_self_sigstop.cpp` - `raise(SIGSTOP)`
 - `prog_sleep.cpp` - Tests nanosleep syscall blocking
 - `prog_socket.cpp` - Tests network access blocking (socket syscall)
-- `prog_system_call.cpp` - Tests `system()`, which forks internally; rejected at `rt_sigaction`
-  like `prog_pthread.cpp`, before the underlying `clone3` ever runs
+- `prog_system_call.cpp` - Tests `system()`, which forks internally; rejected at `rt_sigaction` like `prog_pthread.cpp`, before the underlying `clone3` ever runs

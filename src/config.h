@@ -65,7 +65,8 @@ namespace Config {
         };  // LCOV_EXCL_STOP
     }
 
-    // Syscalls decided in user space: either need a bitmask, path verification, or memory usage verified after them.
+    // Syscalls decided in user space: either need a bitmask or path verification.
+    // brk and mremap need neither, and stay here only until they move to the BPF filter.
     inline user_space_allowed_syscalls_t get_user_space_allowed_syscalls() {
         constexpr uint64_t no_mask = std::numeric_limits<uint64_t>::max();
         return {  // LCOV_EXCL_START

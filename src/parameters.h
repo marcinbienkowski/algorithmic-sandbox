@@ -2,6 +2,7 @@
 #define SANDBOX_PARAMETERS_H
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct parameters {
@@ -15,7 +16,7 @@ struct parameters {
         time_limit_in_ms(std::stoul(args[2])),
         program_binary(args[3]),
         result_file(args[4]),
-        print_debug(std::string{args[5]} == "true") {}
+        print_debug(std::string_view{args[5]} == "true") {}
 };
 
 #endif
