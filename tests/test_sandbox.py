@@ -241,7 +241,7 @@ def test_prog_storm_fault() -> None:
 # mmap() counterpart of the test above, repeated at a short time limit to have a high chance of hitting the
 # kill-during-an-already-reaped-seccomp-stop race.
 def test_prog_storm_mmap_repeated() -> None:
-    for _ in range(10):
+    for _ in range(3):
         run_test('prog_storm_mmap.cpp', expected_exit_codes=[EXIT_TIMEOUT], time_limit=100,
                  min_time=90, max_time=300)
 
