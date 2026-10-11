@@ -60,15 +60,10 @@ class Tracer {
 
     enum class ptrace_event: std::uint8_t { signal, exit, seccomp };
 
-    void read_memory_usage() const {
-        update_memory_usage();
-        log(std::format("Memory usage so far {} KB", memory_usage_in_kb.load()));
-    }
-
     void finalize_tracee(std::pair<int, int> code_subcode, long time_usage, bool terminate_tracee, std::string_view description = "") {
         if (terminate_tracee) {
             log(std::format("Terminating tracee due to {}", description));
-            read_memory_usage();
+            update_memory_usage();
             if (kill(pid, SIGKILL) < 0)
                 Util::ensure(errno == ESRCH, "kill");
         }
@@ -156,7 +151,7 @@ public:
         Util::ensure(WIFSTOPPED(sync_status) and WSTOPSIG(sync_status) == SIGSTOP, "initial sync");
         log("Tracee reached initial sync");
         ptrace_ignore_tracee_death(PTRACE_SETOPTIONS, PTRACE_O_TRACEEXIT | PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP, "PTRACE_SETOPTIONS");
-        ptrace_ignore_tracee_death(PTRACE_CONT, 0, "PTRACE_CONT");    // run till execve()
+        let_tracee_continue(0);  // run till execve()
 
         // Ignore all syscalls before running actual program, including execve() call.
         auto [status, time_usage] = wait_for_tracee();
@@ -214,7 +209,7 @@ public:
         switch (get_ptrace_event(status)) {
             case ptrace_event::exit:
                 log("Tracee stopped right before exiting");
-                read_memory_usage();
+                update_memory_usage();
                 let_tracee_continue(0);
                 break;
 
