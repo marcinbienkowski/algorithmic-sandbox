@@ -65,13 +65,13 @@ The value of `memory_usage` will never exceed `memory_limit`.
 
 If the tracee's actual runtime (user time + system time) exceeds `time_limit`, the sandbox will terminate the tracee and return `code = 1` with `subcode = 27 (SIGPROF)`. The timeout is enforced by a watchdog running in the *sandbox process*, armed on the tracee's own CPU-time clock. The tracee cannot evade the timeout. 
 
-If `print_debug` is equal to the string `true`, then additional information about executed syscalls is output to `stderr`. 
+If `print_debug` is equal to the string `true`, the sandbox logs to `stderr` the tracee's events and the syscalls that the seccomp filter passes to the sandbox for inspection.
 
 ### Input and output
 
 The sandboxed tracee inherits `stdin`, `stdout`, and `stderr` of the sandbox process. You can redirect them as needed. The sandbox closes every other file descriptor it inherited, so the tracee cannot access them. The sandbox itself never reads anything from `stdin`, never writes anything to `stdout`, and only writes to `stderr` if `print_debug` is set to `true`.
 
-Redirect `stdin` from a regular file, and have `stdout`/`stderr` go to a regular file or a pipe that is actively drained — do not leave them attached to a terminal. There is no wall-clock limit anywhere in the sandbox, only CPU-time ones, so a blocking `read` on an empty, non-redirected `stdin` or a `write` to a full, undrained pipe hangs the tracee forever without tripping the timeout. A terminal carries a second risk on top of that: libc's startup code probes a tty via `ioctl`, a syscall that the sandbox allowlist does not include, so the tracee is killed as if it had made an illegal call (`code = 2`) through no fault of the tracee itself.
+Redirect `stdin` from a regular file, and have `stdout`/`stderr` go to a regular file or a pipe that is actively drained. There is no wall-clock limit anywhere in the sandbox, only CPU-time ones, so a blocking `read` on a terminal or an empty pipe, or a `write` to a full, undrained pipe, hangs the tracee forever without tripping the timeout. Do not use `/dev/null` either. When glibc first uses a stream attached to a character device, it calls `ioctl` to check whether the device is a terminal. The allowlist does not include `ioctl`, so the tracee is stopped with `code = 2` through no fault of its own. Pseudo-terminals, as opened by terminal emulators, are recognized without this call.
 
 ### Time measurement caveats
 
@@ -84,8 +84,7 @@ Redirect `stdin` from a regular file, and have `stdout`/`stderr` go to a regular
 ### Memory measurement caveats
 
 * `memory_limit` (enforced via `RLIMIT_AS`) always caps what the tracee can actually allocate, independent of what gets reported.
-* The reported `memory_usage` is the peak `VmPeak` seen in `/proc/<pid>/status`, read right before the tracee exits. This read also captures stack growth, which raises `VmPeak` through page faults without any syscall.
-* When the sandbox kills the tracee itself, on a timeout or an illegal syscall, it reads `VmPeak` right before the kill, as a killed tracee may skip the pre-exit read. On a timeout the tracee is still running at that point, so memory it allocates between this read and the kill is not reported.
+* The reported `memory_usage` is the `VmPeak` value from `/proc/<pid>/status`, read right before the tracee exits or is killed by a signal, a timeout or an illegal syscall.
 
 
 ### Extra caveats

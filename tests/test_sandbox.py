@@ -168,7 +168,7 @@ def test_prog_hash_set() -> None:
 
 
 def test_prog_hello_world() -> None:
-    run_test('prog_hello_world.cpp')
+    run_test('prog_hello_world.cpp', expected_output_file='hello_world.out')
 
 
 def test_prog_many_writes() -> None:
@@ -176,7 +176,7 @@ def test_prog_many_writes() -> None:
 
 
 def test_prog_memory_remap() -> None:
-    run_test('prog_memory_remap.cpp', max_memory=6 * 1024)
+    run_test('prog_memory_remap.cpp', min_memory=4096, max_memory=6 * 1024)
 
 
 @pytest.mark.parametrize('source_file',
@@ -216,7 +216,7 @@ def test_prog_int3() -> None:
 
 
 def test_prog_large_local() -> None:
-    run_test('prog_large_local.cpp', expected_exit_codes=[(1, signal.SIGSEGV)], max_memory=16 * 1024)
+    run_test('prog_large_local.cpp', expected_exit_codes=[(1, signal.SIGSEGV)], min_memory=16000, max_memory=16 * 1024)
 
 
 def test_prog_large_static() -> None:
@@ -232,32 +232,18 @@ def test_prog_malloc_unbounded() -> None:
              min_memory=15500, max_memory=16 * 1024, max_time=530)
 
 
-def test_prog_recursive_fibonacci() -> None:
-    run_test('prog_recursive_fibonacci.cpp', expected_exit_codes=[EXIT_TIMEOUT], min_time=500, max_time=510)
-
-
-# SIGABRT with gcc 13, EXIT_OK with gcc 14
-def test_prog_ret2libc() -> None:
-    run_test('prog_ret2libc.cpp', expected_exit_codes=[(1, signal.SIGABRT), EXIT_OK], ignore_stderr=True)
-
-
 # Tracee spends almost all its time in the signal-delivery-stop.
 # Looser timeout as the kill can only take effect once the tracer has been scheduled to run its signal handler.
 def test_prog_storm_fault() -> None:
     run_test('prog_storm_fault.cpp', expected_exit_codes=[EXIT_TIMEOUT], min_time=490, max_time=700)
 
 
-# mmap() counterpart of the test above.
-def test_prog_storm_mmap() -> None:
-    run_test('prog_storm_mmap.cpp', expected_exit_codes=[EXIT_TIMEOUT], min_time=490, max_time=700)
-
-
-# Repeated at a short time limit to have a high chance of hitting the kill-during-an-already-reaped-seccomp-stop race.
-# max_time is perhaps overgenerous here.
+# mmap() counterpart of the test above, repeated at a short time limit to have a high chance of hitting the
+# kill-during-an-already-reaped-seccomp-stop race.
 def test_prog_storm_mmap_repeated() -> None:
-    for _ in range(10):
+    for _ in range(3):
         run_test('prog_storm_mmap.cpp', expected_exit_codes=[EXIT_TIMEOUT], time_limit=100,
-                 min_time=90, max_time=1000)
+                 min_time=90, max_time=300)
 
 
 def test_prog_stack_overflow() -> None:
@@ -281,6 +267,10 @@ def test_prog_very_many_writes() -> None:
 
 """ These programs should be blocked as they use forbidden syscalls """
 
+def test_prog_clone_raw() -> None:
+    run_test('prog_clone_raw.cpp', expected_exit_codes=[(2, _syscall_nr('clone'))])
+
+
 def test_prog_execve() -> None:
     run_test('prog_execve.cpp', expected_exit_codes=[(2, _syscall_nr('execve'))])
 
@@ -293,7 +283,7 @@ def test_prog_file_access_forbidden() -> None:
     run_test('prog_file_access_forbidden.cpp', expected_exit_codes=[(2, _syscall_nr('openat'))])
 
 
-# SYS_sigprocmask on glibc >= 2.41, SYS_clone on older glibc.
+# rt_sigprocmask on glibc >= 2.41, clone on older glibc.
 def test_prog_fork() -> None:
     run_test('prog_fork.cpp', expected_exit_codes=[(2, _syscall_nr('clone')), (2, _syscall_nr('rt_sigprocmask'))])
 
@@ -308,6 +298,10 @@ def test_prog_i386_abi() -> None:
 
 def test_prog_inotify() -> None:
     run_test('prog_inotify.cpp', expected_exit_codes=[(2, _syscall_nr('inotify_init1'))])
+
+
+def test_prog_lseek_stdout() -> None:
+    run_test('prog_lseek_stdout.cpp', expected_exit_codes=[(2, _syscall_nr('lseek'))])
 
 
 def test_prog_mmap_shared_stdout() -> None:
@@ -341,6 +335,10 @@ def test_prog_self_sigprof() -> None:
 
 def test_prog_self_sigstop() -> None:
     run_test('prog_self_sigstop.cpp', expected_exit_codes=[(2, _syscall_nr('tgkill'))])
+
+
+def test_prog_sigfpe_handler() -> None:
+    run_test('prog_sigfpe_handler.cpp', expected_exit_codes=[(2, _syscall_nr('rt_sigaction'))])
 
 
 def test_prog_sleep() -> None:

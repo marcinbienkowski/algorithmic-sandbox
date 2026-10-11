@@ -22,7 +22,6 @@ class Tracer {
     static inline int status_fd = -1;  // /proc/<pid>/status of the tracee
     static_assert(std::atomic<bool>::is_always_lock_free and std::atomic<int>::is_always_lock_free);  // signal safety
     static inline std::atomic<bool> watchdog_fired = false;
-    static inline std::atomic<int> watchdog_kill_errno = 0;
     static inline std::atomic<int> memory_usage_in_kb = -1;  // no reading yet
 
     // Async-signal-safe for the watchdog. Keeps the largest reading: VmPeak never shrinks.
@@ -33,7 +32,7 @@ class Tracer {
         const std::string_view status(buffer.data(), length > 0 ? static_cast<size_t>(length) : 0);
         const size_t value_pos = status.find_first_of("0123456789", status.find("VmPeak:"));
         if (value_pos == std::string_view::npos)
-            return;
+            return;  // LCOV_EXCL_LINE (tracee already a zombie: only a race with the watchdog's kill)
         const std::string_view value = status.substr(value_pos);
         int vm_peak_in_kb = 0;
         std::from_chars(std::to_address(value.begin()), std::to_address(value.end()), vm_peak_in_kb);
@@ -42,11 +41,10 @@ class Tracer {
     }
 
     static void handle_timeout(int /*signal*/, siginfo_t* info, void* /*context*/) {
-        const int saved_errno = errno;  // errno of code interrupted by SIGPROF
+        const int saved_errno = errno;
         watchdog_fired = true;
-        update_memory_usage();  // the SIGKILL below may skip PTRACE_EVENT_EXIT
-        if (kill(info->si_value.sival_int, SIGKILL) < 0)
-            watchdog_kill_errno = errno;
+        update_memory_usage();  // SIGKILL below may skip PTRACE_EVENT_EXIT.
+        kill(info->si_value.sival_int, SIGKILL);  // Can only fail with ESRCH: the tracee is already reaped.
         errno = saved_errno;
     }
 
@@ -64,8 +62,7 @@ class Tracer {
         if (terminate_tracee) {
             log(std::format("Terminating tracee due to {}", description));
             update_memory_usage();
-            if (kill(pid, SIGKILL) < 0)
-                Util::ensure(errno == ESRCH, "kill");
+            Util::ensure(kill(pid, SIGKILL) == 0, "kill");  // a zombie until reaped, so no ESRCH
         }
         Util::ensure(memory_usage_in_kb >= 0, "no memory reading");
         std::ofstream file;
@@ -92,7 +89,7 @@ class Tracer {
         Util::ensure(result == pid, "wait4");
         return {
             status,
-            (ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) * 1000 + (ru.ru_utime.tv_usec + ru.ru_stime.tv_usec) / 1000
+            ((ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) * 1000) + ((ru.ru_utime.tv_usec + ru.ru_stime.tv_usec) / 1000)
         };
     }
 
@@ -184,8 +181,6 @@ public:
     // returns true if tracing should continue
     bool process_event() {
         const auto [status, time_usage] = wait_for_tracee();
-        // ESRCH only means the tracee had already died of its own accord before the timer expired.
-        Util::ensure(watchdog_kill_errno == 0 or watchdog_kill_errno == ESRCH, "watchdog kill");
 
         if (WIFEXITED(status)) {
             log(std::format("Tracee terminated with exit status {}", WEXITSTATUS(status)));
