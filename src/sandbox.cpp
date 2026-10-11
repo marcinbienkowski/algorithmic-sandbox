@@ -4,7 +4,7 @@
 
 int main(int argc, char* argv[]) {
     close_range(3, ~0U, 0);  // the first file tracee opens has fd=3
-    const std::vector args(argv, argv + argc);
+    const std::vector args(argv, std::next(argv, argc));
     if (args.size() != 6) {
         std::cerr << args[0] << " mem_limit_in_kb time_limit_in_ms program_binary result_file print_debug(true/false)\n";
         return EXIT_FAILURE;

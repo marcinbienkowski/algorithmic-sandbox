@@ -69,13 +69,13 @@ class Subprocess {
         };
         for (const auto& [nr, required_args]: Config::get_kernel_space_allowed_syscalls(getpid())) {
             // Allows if syscall and its argument match, else proceed to next block.
-            const std::size_t total = 2 + required_args.size() * 4 + 1;
+            const std::size_t total = 2 + (required_args.size() * 4) + 1;
             const std::size_t block_start = prog.size();
             const auto reject_distance = [&] { return static_cast<unsigned char>(total - (prog.size() - block_start + 1)); };
             prog.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr)));
             prog.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<uint32_t>(nr), 0, reject_distance()));
             for (const auto& [arg_id, value]: required_args) {
-                const auto lo_offset = static_cast<uint32_t>(offsetof(seccomp_data, args) + arg_id * sizeof(uint64_t));
+                const auto lo_offset = static_cast<uint32_t>(offsetof(seccomp_data, args) + (arg_id * sizeof(uint64_t)));
                 prog.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, lo_offset));
                 prog.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<uint32_t>(value), 0, reject_distance()));
                 prog.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS, static_cast<uint32_t>(lo_offset + sizeof(uint32_t))));

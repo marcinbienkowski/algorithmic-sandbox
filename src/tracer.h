@@ -91,7 +91,7 @@ class Tracer {
         Util::ensure(result == pid, "wait4");
         return {
             status,
-            (ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) * 1000 + (ru.ru_utime.tv_usec + ru.ru_stime.tv_usec) / 1000
+            ((ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) * 1000) + ((ru.ru_utime.tv_usec + ru.ru_stime.tv_usec) / 1000)
         };
     }
 
