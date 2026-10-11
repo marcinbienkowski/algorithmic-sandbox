@@ -33,7 +33,7 @@ class Tracer {
         const std::string_view status(buffer.data(), length > 0 ? static_cast<size_t>(length) : 0);
         const size_t value_pos = status.find_first_of("0123456789", status.find("VmPeak:"));
         if (value_pos == std::string_view::npos)
-            return;
+            return;  // LCOV_EXCL_LINE (tracee already a zombie: only a race with the watchdog's kill)
         const std::string_view value = status.substr(value_pos);
         int vm_peak_in_kb = 0;
         std::from_chars(std::to_address(value.begin()), std::to_address(value.end()), vm_peak_in_kb);
@@ -64,8 +64,7 @@ class Tracer {
         if (terminate_tracee) {
             log(std::format("Terminating tracee due to {}", description));
             update_memory_usage();
-            if (kill(pid, SIGKILL) < 0)
-                Util::ensure(errno == ESRCH, "kill");
+            Util::ensure(kill(pid, SIGKILL) == 0, "kill");  // a zombie until reaped, so no ESRCH
         }
         Util::ensure(memory_usage_in_kb >= 0, "no memory reading");
         std::ofstream file;
