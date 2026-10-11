@@ -23,7 +23,7 @@ class Tracer {
     static_assert(std::atomic<bool>::is_always_lock_free and std::atomic<int>::is_always_lock_free);  // signal safety
     static inline std::atomic<bool> watchdog_fired = false;
     static inline std::atomic<int> watchdog_kill_errno = 0;
-    static inline std::atomic<int> memory_usage_in_kb = 0;
+    static inline std::atomic<int> memory_usage_in_kb = -1;  // no reading yet
 
     // Async-signal-safe for the watchdog. Keeps the largest reading: VmPeak never shrinks.
     // Failed pread() or a zombie tracee (no VmPeak line) leaves the value unchanged.
@@ -60,20 +60,14 @@ class Tracer {
 
     enum class ptrace_event: std::uint8_t { signal, exit, seccomp };
 
-    void read_memory_usage() const {
-        update_memory_usage();
-        log(std::format("Memory usage so far {} KB", memory_usage_in_kb.load()));
-    }
-
     void finalize_tracee(std::pair<int, int> code_subcode, long time_usage, bool terminate_tracee, std::string_view description = "") {
         if (terminate_tracee) {
             log(std::format("Terminating tracee due to {}", description));
-            read_memory_usage();
+            update_memory_usage();
             if (kill(pid, SIGKILL) < 0)
                 Util::ensure(errno == ESRCH, "kill");
         }
-        if (memory_usage_in_kb == 0)
-            log("No memory reading was ever taken; reporting 0 KB");
+        Util::ensure(memory_usage_in_kb >= 0, "no memory reading");
         std::ofstream file;
         file.exceptions(std::fstream::failbit | std::fstream::badbit);
         file.open(result_file, std::fstream::out);
@@ -157,7 +151,7 @@ public:
         Util::ensure(WIFSTOPPED(sync_status) and WSTOPSIG(sync_status) == SIGSTOP, "initial sync");
         log("Tracee reached initial sync");
         ptrace_ignore_tracee_death(PTRACE_SETOPTIONS, PTRACE_O_TRACEEXIT | PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP, "PTRACE_SETOPTIONS");
-        ptrace_ignore_tracee_death(PTRACE_CONT, 0, "PTRACE_CONT");    // run till execve()
+        let_tracee_continue(0);  // run till execve()
 
         // Ignore all syscalls before running actual program, including execve() call.
         auto [status, time_usage] = wait_for_tracee();
@@ -170,6 +164,7 @@ public:
         // Handling error when calling execve()
         if (get_ptrace_event(status) == ptrace_event::exit) {
             log("Tracee failed to execute execve()");
+            memory_usage_in_kb = 0;
             let_tracee_continue(0);
             std::tie(status, time_usage) = wait_for_tracee();
             Util::ensure(WIFSIGNALED(status) and WTERMSIG(status) == SIGKILL, "WTERMSIG != SIGKILL");
@@ -214,7 +209,7 @@ public:
         switch (get_ptrace_event(status)) {
             case ptrace_event::exit:
                 log("Tracee stopped right before exiting");
-                read_memory_usage();
+                update_memory_usage();
                 let_tracee_continue(0);
                 break;
 

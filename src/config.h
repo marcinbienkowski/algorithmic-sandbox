@@ -33,6 +33,7 @@ namespace Config {
         const auto pid64 = static_cast<uint64_t>(pid);
         return {  // LCOV_EXCL_START
             {SYS_arch_prctl, {{0, ARCH_SET_FS}}},
+            {SYS_brk, {}},
             {SYS_close, {}},
             {SYS_exit_group, {}},
             {SYS_fstat, {}},
@@ -43,6 +44,7 @@ namespace Config {
             {SYS_gettid, {}},
             {SYS_lseek, {{0, STDIN_FILENO}}},
             {SYS_lseek, {{0, 3}}},
+            {SYS_mremap, {}},
             {SYS_munmap, {}},
             {SYS_poll, {{2, 0}}},
             {SYS_prlimit64, {{0, 0}, {1, RLIMIT_STACK}, {2, 0}}},
@@ -66,14 +68,11 @@ namespace Config {
     }
 
     // Syscalls decided in user space: either need a bitmask or path verification.
-    // brk and mremap need neither, and stay here only until they move to the BPF filter.
     inline user_space_allowed_syscalls_t get_user_space_allowed_syscalls() {
         constexpr uint64_t no_mask = std::numeric_limits<uint64_t>::max();
         return {  // LCOV_EXCL_START
-            {SYS_brk, {}},
             {SYS_mmap, {{2, PROT_EXEC, 0}, {4, no_mask, 0xFFFFFFFF}}},
             {SYS_mprotect, {{2, PROT_EXEC, 0}}},
-            {SYS_mremap, {}},
             {SYS_openat, {{2, no_mask, O_RDONLY}}},
             {SYS_openat, {{2, no_mask, O_RDONLY | O_CLOEXEC}}},
             {SYS_readlinkat, {}}
