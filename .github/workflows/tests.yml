@@ -8,8 +8,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  local-tests:
-    runs-on: ubuntu-latest
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash -e {0}
@@ -56,5 +60,12 @@ jobs:
       - name: Upload coverage report
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-report
+          name: coverage-report-${{ matrix.os }}
           path: coverage_report
+
+  local-tests:
+    needs: tests
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.tests.result }}" = success
