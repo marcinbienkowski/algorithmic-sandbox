@@ -2,7 +2,7 @@
 #include <vector>
 
 int main() {
-    static const std::vector<std::string> paths = { "/etc/timezone", "/dev/urandom", "/proc/self/maps", "/usr/share/zoneinfo/Europe/Warsaw" };
+    static const std::vector<std::string> paths = { "/proc/self/maps" };
     for (const auto& path : paths) {
         std::ifstream file(path);
         if (file.is_open()) {

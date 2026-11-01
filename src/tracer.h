@@ -132,7 +132,7 @@ class Tracer {
 
 public:
     explicit Tracer(pid_t _pid, const parameters& params) :
-                    syscall_handler(_pid, params.program_binary), result_file(params.result_file),
+                    syscall_handler(_pid), result_file(params.result_file),
                     debug_mode(params.print_debug), pid(_pid), time_limit_in_ms(params.time_limit_in_ms) {}
 
     bool initialize() {

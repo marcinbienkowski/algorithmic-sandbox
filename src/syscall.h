@@ -51,10 +51,10 @@ class SyscallHandler {
     }
 
 public:
-    explicit SyscallHandler(pid_t _pid, const std::string& binary_name):
+    explicit SyscallHandler(pid_t _pid):
         userspace_allowed_syscalls(Config::get_user_space_allowed_syscalls()),
         openat_allowed_paths(Config::get_openat_allowed_paths()),
-        readlinkat_allowed_paths(Config::get_readlinkat_allowed_paths(binary_name)),
+        readlinkat_allowed_paths(Config::get_readlinkat_allowed_paths()),
         pid(_pid) {}
 
     [[nodiscard]] int get_id() const { return static_cast<int>(syscall.seccomp.nr); }

@@ -22,7 +22,7 @@ The allowlist is deliberately minimal. It admits only the syscalls that a comput
 
 At startup, the sandbox closes all inherited file descriptors except `stdin`, `stdout` and `stderr`, and then forks. The child sets resource limits, requests tracing with `PTRACE_TRACEME`, installs a seccomp-BPF filter and executes the tracee binary.
 
-The filter allows a fixed set of syscalls directly in the kernel, with exact-value checks on selected arguments. Any other syscall stops the tracee, and the sandbox inspects it in user space. Only anonymous `mmap` and `mprotect` without `PROT_EXEC`, read-only `openat` on a short list of paths, and `readlinkat` on the tracee's own binary pass this check. The tracee cannot create threads or processes, so its memory cannot change while the sandbox inspects syscall arguments.
+The filter allows a fixed set of syscalls directly in the kernel, with exact-value checks on selected arguments. Any other syscall stops the tracee, and the sandbox inspects it in user space. Only anonymous `mmap` and `mprotect` without `PROT_EXEC`, read-only `openat` of `/proc/self/maps`, and `readlinkat` of `/proc/self/exe` pass this check. Language runtimes call both at startup. The tracee cannot create threads or processes, so its memory cannot change while the sandbox inspects syscall arguments.
 
 Memory is capped with `RLIMIT_AS`. Time is enforced by a watchdog timer on the tracee's CPU-time clock, with `RLIMIT_CPU` as a failsafe. With `PTRACE_O_EXITKILL`, the kernel kills the tracee whenever the sandbox exits.
 
@@ -109,8 +109,6 @@ Redirect `stdin` from a regular file, and have `stdout`/`stderr` go to a regular
 
 * In rare cases, the sandbox may stop a seemingly innocent tracee for calling the `SYS_futex` syscall. This happens when the tracee writes to memory within its address space that it did not allocate. Such a write raises no `SIGSEGV`, but it may corrupt internal glibc synchronization structures. Later, glibc may try to lock or unlock them by calling `SYS_futex`, which is blocked.
 * A tracee that makes a 32-bit (i386 ABI) syscall, for example through a hand-written `int 0x80` in inline assembly, is killed immediately with `code = 1` and `subcode = SIGSYS`. It bypasses the usual illegal-syscall reporting (`code = 2`). No C/C++/Rust compiler targeting x86_64 emits such a syscall.
-* The list of paths that the tracee may open (see `Config::get_openat_allowed_paths` in `config.h`) includes the time zone file `/usr/share/zoneinfo/Europe/Warsaw`. A tracee that loads any other time zone is stopped with `code = 2`. Adjust the list for your location.
-
 
 ## Testing
 

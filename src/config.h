@@ -81,12 +81,12 @@ namespace Config {
 
     // Paths program may open using SYS_openat
     inline std::set<std::string> get_openat_allowed_paths() {
-        return {"/etc/timezone", "/dev/urandom", "/proc/self/maps", "/usr/share/zoneinfo/Europe/Warsaw"};
+        return {"/proc/self/maps"};
     }
 
     // Paths program may read using SYS_readlinkat
-    inline std::set<std::string> get_readlinkat_allowed_paths(const std::string& binary_name) {
-        return {binary_name, "/proc/self/exe"};
+    inline std::set<std::string> get_readlinkat_allowed_paths() {
+        return {"/proc/self/exe"};
     }
 
 } // namespace Config
