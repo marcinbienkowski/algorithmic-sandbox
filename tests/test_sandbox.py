@@ -300,6 +300,10 @@ def test_prog_inotify() -> None:
     run_test('prog_inotify.cpp', expected_exit_codes=[(2, _syscall_nr('inotify_init1'))])
 
 
+def test_prog_localtime() -> None:
+    run_test('prog_localtime.cpp', expected_exit_codes=[(2, _syscall_nr('openat'))])
+
+
 def test_prog_lseek_stdout() -> None:
     run_test('prog_lseek_stdout.cpp', expected_exit_codes=[(2, _syscall_nr('lseek'))])
 

@@ -1,5 +1,5 @@
 #include <fcntl.h>
 
 int main() {
-    open("/dev/urandom", O_RDWR);
+    open("/proc/self/maps", O_RDWR);
 }

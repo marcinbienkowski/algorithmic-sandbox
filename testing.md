@@ -53,6 +53,7 @@ These tests exercise the `sandbox`/`sandbox_coverage` binary itself rather than 
 - `prog_getrlimit.cpp` - Queries resource limits; the `RLIMIT_STACK` query is allowed
 - `prog_i386_abi.cpp` - Attempts to use 32-bit ABI
 - `prog_inotify.cpp` - Tests file system monitoring blocking (inotify_init syscall)
+- `prog_localtime.cpp` - `localtime()`, which opens `/etc/localtime`
 - `prog_lseek_stdout.cpp` - Seeks in stdout, which would let the tracee rewrite output it has already written
 - `prog_mmap_shared_stdout.cpp` - Tests whether the tracee can rewrite output already written
 - `prog_open_wrong_address.cpp` - Tests invalid memory address handling
