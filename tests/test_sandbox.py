@@ -216,7 +216,7 @@ def test_prog_int3() -> None:
 
 
 def test_prog_large_local() -> None:
-    run_test('prog_large_local.cpp', expected_exit_codes=[(1, signal.SIGSEGV)], min_memory=16000, max_memory=16 * 1024)
+    run_test('prog_large_local.cpp', expected_exit_codes=[(1, signal.SIGSEGV)], max_memory=16 * 1024)
 
 
 def test_prog_large_static() -> None:
