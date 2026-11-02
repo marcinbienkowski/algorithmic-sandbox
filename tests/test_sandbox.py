@@ -113,6 +113,16 @@ def test_sandbox_no_arguments() -> None:
     assert 'mem_limit_in_kb time_limit_in_ms program_binary result_file print_debug(true/false)' in sp.stderr
 
 
+@pytest.mark.parametrize('limits', [('abc', '500'), ('-1', '500'), ('12abc', '500'), ('99999999999999999999', '500'),
+                                    ('16384', 'abc')])
+def test_sandbox_invalid_limit(tmp_path: Path, limits: tuple[str, str]) -> None:
+    argv = [str(Path.cwd() / 'sandbox_coverage'), *limits, 'non_existent_file', str(tmp_path / 'result'), 'false']
+    sp = subprocess.run(argv, check=False, capture_output=True, text=True)  # noqa: S603
+    assert sp.returncode == 1
+    assert 'mem_limit_in_kb time_limit_in_ms program_binary result_file print_debug(true/false)' in sp.stderr
+    assert not (tmp_path / 'result').exists()
+
+
 def test_sandbox_nonexistent_file() -> None:
     run_test('prog_hello_world.cpp', executable='non_existent_file',
              expected_exit_codes=[EXIT_EXECVE_ERROR], min_memory=0)

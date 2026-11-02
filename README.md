@@ -89,7 +89,7 @@ If `print_debug` is equal to the string `true`, the sandbox logs to `stderr` the
 
 ### Input and output
 
-The sandboxed tracee inherits `stdin`, `stdout`, and `stderr` of the sandbox process. You can redirect them as needed. The sandbox closes every other file descriptor it inherited, so the tracee cannot access them. The sandbox itself never reads anything from `stdin`, never writes anything to `stdout`, and writes to `stderr` only if `print_debug` is set to `true`.
+The sandboxed tracee inherits `stdin`, `stdout`, and `stderr` of the sandbox process. You can redirect them as needed. The sandbox closes every other file descriptor it inherited, so the tracee cannot access them. The sandbox itself never reads anything from `stdin`, never writes anything to `stdout`, and writes to `stderr` only the usage message for invalid arguments and, if `print_debug` is set to `true`, the debug log.
 
 Redirect `stdin` from a regular file, and have `stdout`/`stderr` go to a regular file or a pipe that is actively drained. The sandbox enforces only CPU-time limits and has no wall-clock limit. Thus, a blocking `read` on a terminal or an empty pipe, or a `write` to a full, undrained pipe, hangs the tracee forever without tripping the timeout. Do not use `/dev/null` either. When glibc first uses a stream attached to a character device, it calls `ioctl` to check whether the device is a terminal. The allowlist does not include `ioctl`, so the tracee is stopped with `code = 2` through no fault of its own. Pseudo-terminals, as opened by terminal emulators, are recognized without this call.
 
