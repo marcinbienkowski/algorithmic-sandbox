@@ -7,6 +7,7 @@
 #include <array>
 #include <bit>
 #include <climits>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <sys/ptrace.h>
@@ -21,33 +22,33 @@ class SyscallHandler {
     pid_t pid;
     ptrace_syscall_info syscall = {};
 
-    [[nodiscard]] std::pair<bool, uint64_t> read_word(uint64_t addr) const {
+    [[nodiscard]] std::optional<uint64_t> read_word(uint64_t addr) const {
         errno = 0;
         const long data = ptrace(static_cast<__ptrace_request>(PTRACE_PEEKDATA), pid, static_cast<long>(addr), 0);
         if (errno == ESRCH or errno == EIO or errno == EFAULT)
-            return {false, 0};
+            return std::nullopt;
         Util::ensure(errno == 0, "PTRACE_PEEKDATA");
-        return {true, static_cast<uint64_t>(data)};
+        return static_cast<uint64_t>(data);
     }
 
-    [[nodiscard]] std::pair<bool, std::string> read_path(uint64_t path_addr) const {
+    [[nodiscard]] std::optional<std::string> read_path(uint64_t path_addr) const {
         std::string path;
         path.reserve(PATH_MAX);
         for (size_t j = 0; j < PATH_MAX; j++) {
-            const auto [read_success, cw] = read_word(path_addr + j);
-            if (not read_success)
-                return {false, path};
-            const char c = static_cast<char>(cw & 0xffU);
+            const auto word = read_word(path_addr + j);
+            if (not word)
+                return std::nullopt;
+            const char c = static_cast<char>(*word & 0xffU);
             if (c == 0)
                 break;
             path.push_back(c);
         }
-        return {true, path};
+        return path;
     }
 
     [[nodiscard]] bool path_allowed(const std::set<std::string>& allowed_paths) const {
-        const auto [read_success, path] = read_path(syscall.seccomp.args[1]);
-        return read_success and allowed_paths.contains(path);
+        const auto path = read_path(syscall.seccomp.args[1]);
+        return path and allowed_paths.contains(*path);
     }
 
 public:
