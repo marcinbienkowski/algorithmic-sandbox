@@ -29,7 +29,7 @@ namespace Config {
     constexpr int max_pending_signals = 1024;
 
     // Syscalls that can be decided in kernel space. Exact-equality arg checks only.
-    inline kernel_space_allowed_syscalls_t get_kernel_space_allowed_syscalls(int pid) {
+    [[nodiscard]] inline kernel_space_allowed_syscalls_t get_kernel_space_allowed_syscalls(int pid) {
         const auto pid64 = static_cast<uint64_t>(pid);
         return {  // LCOV_EXCL_START
             {SYS_arch_prctl, {{0, ARCH_SET_FS}}},
@@ -68,7 +68,7 @@ namespace Config {
     }
 
     // Syscalls decided in user space: either need a bitmask or path verification.
-    inline user_space_allowed_syscalls_t get_user_space_allowed_syscalls() {
+    [[nodiscard]] inline user_space_allowed_syscalls_t get_user_space_allowed_syscalls() {
         constexpr uint64_t no_mask = std::numeric_limits<uint64_t>::max();
         return {  // LCOV_EXCL_START
             {SYS_mmap, {{2, PROT_EXEC, 0}, {4, no_mask, 0xFFFFFFFF}}},
@@ -80,12 +80,12 @@ namespace Config {
     }
 
     // Paths program may open using SYS_openat
-    inline std::set<std::string> get_openat_allowed_paths() {
+    [[nodiscard]] inline std::set<std::string> get_openat_allowed_paths() {
         return {"/proc/self/maps"};
     }
 
     // Paths program may read using SYS_readlinkat
-    inline std::set<std::string> get_readlinkat_allowed_paths() {
+    [[nodiscard]] inline std::set<std::string> get_readlinkat_allowed_paths() {
         return {"/proc/self/exe"};
     }
 

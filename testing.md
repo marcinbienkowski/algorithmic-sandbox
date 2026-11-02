@@ -7,6 +7,7 @@ This document catalogs the test programs in `tests/programs/` and what each one 
 These tests exercise the `sandbox`/`sandbox_coverage` binary itself rather than a test program, covering error paths outside the seccomp/ptrace machinery:
 
 - `test_sandbox_no_arguments` - Invoked with no arguments; checks the usage message
+- `test_sandbox_invalid_limit` - Passes a limit that is not a plain decimal number
 - `test_sandbox_nonexistent_file` - Targets a nonexistent executable path
 - `test_sandbox_nonexecutable_file` - Targets an empty, non-executable file
 - `test_sandbox_internal_error_on_setrlimit` - Lowers the `RLIMIT_CPU` hard limit before the sandbox runs, so its own `setrlimit()` call fails
