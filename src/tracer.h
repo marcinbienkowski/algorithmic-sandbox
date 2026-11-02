@@ -98,7 +98,7 @@ class Tracer {
     }
 
     // Returns true if the syscall is allowed.
-    bool process_syscall() {
+    [[nodiscard]] bool process_syscall() {
         if (syscall_handler.read_syscall()) {
             log(syscall_handler.syscall_to_string());
             return syscall_handler.is_allowed();
@@ -135,7 +135,7 @@ public:
                     syscall_handler(_pid), result_file(params.result_file),
                     debug_mode(params.print_debug), pid(_pid), time_limit_in_ms(params.time_limit_in_ms) {}
 
-    bool initialize() {
+    [[nodiscard]] bool initialize() {
         // Stop due to tracee calling raise(SIGSTOP)
         const int sync_status = wait_for_tracee().first;
         if (WIFSIGNALED(sync_status)) {  // error during tracee initialization
@@ -179,7 +179,7 @@ public:
     }
 
     // returns true if tracing should continue
-    bool process_event() {
+    [[nodiscard]] bool process_event() {
         const auto [status, time_usage] = wait_for_tracee();
 
         if (WIFEXITED(status)) {
