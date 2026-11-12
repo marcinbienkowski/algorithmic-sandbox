@@ -5,7 +5,6 @@
 #include "syscall.h"
 #include <atomic>
 #include <charconv>
-#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -23,6 +22,12 @@ class Tracer {
     static_assert(std::atomic<bool>::is_always_lock_free and std::atomic<int>::is_always_lock_free);  // signal safety
     static inline std::atomic<bool> watchdog_fired = false;
     static inline std::atomic<int> memory_usage_in_kb = -1;  // no reading yet
+
+    template<typename... Args>
+    void log(std::format_string<Args...> fmt, Args&&... args) const {
+        if (debug_mode)
+            std::cerr << std::format("TRACEE PID = {}: {}\n", pid, std::format(fmt, std::forward<Args>(args)...));
+    }
 
     // Async-signal-safe for the watchdog. Keeps the largest reading: VmPeak never shrinks.
     // Failed pread() or a zombie tracee (no VmPeak line) leaves the value unchanged.
@@ -48,8 +53,6 @@ class Tracer {
         errno = saved_errno;
     }
 
-    void log(std::string_view s) const { if (debug_mode) std::cerr << std::format("TRACEE PID = {}: {}\n", pid, s); }
-
     void ptrace_ignore_tracee_death(int request, long data, std::string_view error_string) const {
         errno = 0;
         const long result = ptrace(static_cast<__ptrace_request>(request), pid, 0, data);
@@ -58,12 +61,7 @@ class Tracer {
 
     enum class ptrace_event: std::uint8_t { signal, exit, seccomp };
 
-    void finalize_tracee(std::pair<int, int> code_subcode, long time_usage, bool terminate_tracee, std::string_view description = "") {
-        if (terminate_tracee) {
-            log(std::format("Terminating tracee due to {}", description));
-            update_memory_usage();
-            Util::ensure(kill(pid, SIGKILL) == 0, "kill");  // a zombie until reaped, so no ESRCH
-        }
+    void finalize_tracee(std::pair<int, int> code_subcode, long time_usage) {
         Util::ensure(memory_usage_in_kb >= 0, "no memory reading");
         std::ofstream file;
         file.exceptions(std::fstream::failbit | std::fstream::badbit);
@@ -100,7 +98,7 @@ class Tracer {
     // Returns true if the syscall is allowed.
     [[nodiscard]] bool process_syscall() {
         if (syscall_handler.read_syscall()) {
-            log(syscall_handler.syscall_to_string());
+            log("{}", syscall_handler.syscall_to_string());
             return syscall_handler.is_allowed();
         }
         log("Tracee was killed in seccomp stop");
@@ -127,7 +125,7 @@ class Tracer {
             .tv_sec = static_cast<time_t>(time_limit_in_ms / 1000),
             .tv_nsec = static_cast<long>(time_limit_in_ms % 1000) * 1'000'000 } };
         Util::ensure(timer_settime(timer, TIMER_ABSTIME, &deadline, nullptr) == 0, "timer_settime");
-        log(std::format("Armed CPU-time watchdog at {} ms", time_limit_in_ms));
+        log("Armed CPU-time watchdog at {} ms", time_limit_in_ms);
     }
 
 public:
@@ -138,13 +136,8 @@ public:
     [[nodiscard]] bool initialize() {
         // Stop due to tracee calling raise(SIGSTOP)
         const int sync_status = wait_for_tracee().first;
-        if (WIFSIGNALED(sync_status)) {  // error during tracee initialization
-            Util::ensure(WTERMSIG(sync_status) == SIGUSR1 or WTERMSIG(sync_status) == SIGUSR2, "WTERMSIG");
-            if (WTERMSIG(sync_status) == SIGUSR1)
-                Util::ensure(false, "setrlimit");
-            else
-                Util::ensure(false, "PTRACE_TRACEME or BPF filter install");
-        }
+        Util::fail_if(WIFSIGNALED(sync_status) and WTERMSIG(sync_status) == SIGUSR1, "setrlimit");
+        Util::fail_if(WIFSIGNALED(sync_status) and WTERMSIG(sync_status) == SIGUSR2, "PTRACE_TRACEME or BPF filter install");
         Util::ensure(WIFSTOPPED(sync_status) and WSTOPSIG(sync_status) == SIGSTOP, "initial sync");
         log("Tracee reached initial sync");
         ptrace_ignore_tracee_death(PTRACE_SETOPTIONS, PTRACE_O_TRACEEXIT | PTRACE_O_EXITKILL | PTRACE_O_TRACESECCOMP, "PTRACE_SETOPTIONS");
@@ -165,13 +158,13 @@ public:
             let_tracee_continue(0);
             std::tie(status, time_usage) = wait_for_tracee();
             Util::ensure(WIFSIGNALED(status) and WTERMSIG(status) == SIGKILL, "WTERMSIG != SIGKILL");
-            finalize_tracee({-1, 0}, time_usage, false);
+            finalize_tracee({-1, 0}, time_usage);
             return false;
         }
 
         // Stop after a successful execve()
         const int stop_sig = WSTOPSIG(status);
-        log(std::format("Initialization stopped by signal {}", stop_sig));
+        log("Initialization stopped by signal {}", stop_sig);
         Util::ensure(stop_sig == SIGTRAP or stop_sig == SIGSEGV, "stopping signal");
         arm_timeout_timer();
         let_tracee_continue(stop_sig == SIGTRAP ? 0 : stop_sig);  // this SIGTRAP is execve()'s stop, not the tracee's
@@ -183,8 +176,8 @@ public:
         const auto [status, time_usage] = wait_for_tracee();
 
         if (WIFEXITED(status)) {
-            log(std::format("Tracee terminated with exit status {}", WEXITSTATUS(status)));
-            finalize_tracee({0, WEXITSTATUS(status)}, time_usage, false);
+            log("Tracee terminated with exit status {}", WEXITSTATUS(status));
+            finalize_tracee({0, WEXITSTATUS(status)}, time_usage);
             return false;
         }
 
@@ -193,11 +186,11 @@ public:
             if (term_sig == SIGKILL) {
                 Util::ensure(watchdog_fired, "SIGKILL");
                 log("Tracee killed by the CPU-time watchdog");
-                finalize_tracee({1, SIGPROF}, time_usage, false);
-                return false;
+                finalize_tracee({1, SIGPROF}, time_usage);
+            } else {
+                log("Tracee killed by signal {}", term_sig);
+                finalize_tracee({1, term_sig}, time_usage);
             }
-            log(std::format("Tracee killed by signal {}", term_sig));
-            finalize_tracee({1, term_sig}, time_usage, false);
             return false;
         }
 
@@ -211,7 +204,10 @@ public:
             case ptrace_event::seccomp:
                 if (not process_syscall()) {
                     const int syscall_id = syscall_handler.get_id();
-                    finalize_tracee({2, syscall_id}, time_usage, true, std::format("disallowed syscall {}", syscall_id));
+                    log("Terminating tracee due to disallowed syscall {}", syscall_id);
+                    update_memory_usage();
+                    Util::ensure(kill(pid, SIGKILL) == 0, "kill");  // a zombie until reaped, so no ESRCH
+                    finalize_tracee({2, syscall_id}, time_usage);
                     return false;
                 }
                 let_tracee_continue(0);
@@ -219,7 +215,7 @@ public:
 
             case ptrace_event::signal: {
                 const int signal = WSTOPSIG(status);
-                log(std::format("Tracer catches signal {} and passes to tracee", signal));
+                log("Tracer catches signal {} and passes to tracee", signal);
                 let_tracee_continue(signal);
                 break;
             }
