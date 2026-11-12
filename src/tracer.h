@@ -58,12 +58,7 @@ class Tracer {
 
     enum class ptrace_event: std::uint8_t { signal, exit, seccomp };
 
-    void finalize_tracee(std::pair<int, int> code_subcode, long time_usage, bool terminate_tracee, std::string_view description = "") {
-        if (terminate_tracee) {
-            log(std::format("Terminating tracee due to {}", description));
-            update_memory_usage();
-            Util::ensure(kill(pid, SIGKILL) == 0, "kill");  // a zombie until reaped, so no ESRCH
-        }
+    void finalize_tracee(std::pair<int, int> code_subcode, long time_usage) {
         Util::ensure(memory_usage_in_kb >= 0, "no memory reading");
         std::ofstream file;
         file.exceptions(std::fstream::failbit | std::fstream::badbit);
@@ -165,7 +160,7 @@ public:
             let_tracee_continue(0);
             std::tie(status, time_usage) = wait_for_tracee();
             Util::ensure(WIFSIGNALED(status) and WTERMSIG(status) == SIGKILL, "WTERMSIG != SIGKILL");
-            finalize_tracee({-1, 0}, time_usage, false);
+            finalize_tracee({-1, 0}, time_usage);
             return false;
         }
 
@@ -184,7 +179,7 @@ public:
 
         if (WIFEXITED(status)) {
             log(std::format("Tracee terminated with exit status {}", WEXITSTATUS(status)));
-            finalize_tracee({0, WEXITSTATUS(status)}, time_usage, false);
+            finalize_tracee({0, WEXITSTATUS(status)}, time_usage);
             return false;
         }
 
@@ -193,11 +188,11 @@ public:
             if (term_sig == SIGKILL) {
                 Util::ensure(watchdog_fired, "SIGKILL");
                 log("Tracee killed by the CPU-time watchdog");
-                finalize_tracee({1, SIGPROF}, time_usage, false);
+                finalize_tracee({1, SIGPROF}, time_usage);
                 return false;
             }
             log(std::format("Tracee killed by signal {}", term_sig));
-            finalize_tracee({1, term_sig}, time_usage, false);
+            finalize_tracee({1, term_sig}, time_usage);
             return false;
         }
 
@@ -211,7 +206,10 @@ public:
             case ptrace_event::seccomp:
                 if (not process_syscall()) {
                     const int syscall_id = syscall_handler.get_id();
-                    finalize_tracee({2, syscall_id}, time_usage, true, std::format("disallowed syscall {}", syscall_id));
+                    log(std::format("Terminating tracee due to disallowed syscall {}", syscall_id));
+                    update_memory_usage();
+                    Util::ensure(kill(pid, SIGKILL) == 0, "kill");  // a zombie until reaped, so no ESRCH
+                    finalize_tracee({2, syscall_id}, time_usage);
                     return false;
                 }
                 let_tracee_continue(0);
