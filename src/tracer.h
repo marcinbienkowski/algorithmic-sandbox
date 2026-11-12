@@ -5,7 +5,6 @@
 #include "syscall.h"
 #include <atomic>
 #include <charconv>
-#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -185,14 +184,9 @@ public:
 
         if (WIFSIGNALED(status)) {
             const int term_sig = WTERMSIG(status);
-            if (term_sig == SIGKILL) {
-                Util::ensure(watchdog_fired, "SIGKILL");
-                log("Tracee killed by the CPU-time watchdog");
-                finalize_tracee({1, SIGPROF}, time_usage);
-                return false;
-            }
-            log(std::format("Tracee killed by signal {}", term_sig));
-            finalize_tracee({1, term_sig}, time_usage);
+            Util::ensure(term_sig != SIGKILL or watchdog_fired, "SIGKILL");
+            log(term_sig == SIGKILL ? "Tracee killed by the CPU-time watchdog" : std::format("Tracee killed by signal {}", term_sig));
+            finalize_tracee({1, term_sig == SIGKILL ? SIGPROF : term_sig}, time_usage);
             return false;
         }
 
