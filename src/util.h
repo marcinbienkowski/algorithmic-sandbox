@@ -12,9 +12,13 @@
 
 namespace Util {
 
-    inline void ensure(bool condition, std::string_view error_string = "", const std::source_location& loc = std::source_location::current()) {
-        if (not condition)
+    inline void fail_if(bool condition, std::string_view error_string = "", const std::source_location& loc = std::source_location::current()) {
+        if (condition)
             throw std::runtime_error{std::format("at {} [{}]", loc.function_name(), error_string)};
+    }
+
+    inline void ensure(bool condition, std::string_view error_string = "", const std::source_location& loc = std::source_location::current()) {
+        fail_if(not condition, error_string, loc);
     }
 
     [[nodiscard]] inline std::optional<unsigned long> parse_unsigned(std::string_view s) {
