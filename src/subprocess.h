@@ -4,7 +4,6 @@
 #include "config.h"
 #include "parameters.h"
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <linux/audit.h>
 #include <linux/filter.h>
@@ -30,34 +29,9 @@ class Subprocess {
             raise(sig);  // NOLINT(cert-err33-c)  // LCOV_EXCL_LINE
     }
 
-    static void limit (__rlimit_resource resource, rlim_t rlim, rlim_t rlim_max = 0) {
-        const rlimit rl = { .rlim_cur = rlim, .rlim_max = std::max(rlim, rlim_max) };
+    static void limit (__rlimit_resource resource, rlim_t rlim) {
+        const rlimit rl = { .rlim_cur = rlim, .rlim_max = rlim };
         enforce(setrlimit(resource, &rl) == 0, SIGUSR1);
-    }
-
-    void set_important_limits() const {
-        const rlim_t mem_limit_in_bytes = params.mem_limit_in_kb * 1024;
-        // Failsafe if tracer-side watchdog fails: should never occur.
-        const auto failsafe_stop_time = static_cast<rlim_t>(std::ceil(1.5 * static_cast<double>(params.time_limit_in_ms) / 1000.0)) + 3;
-        limit(RLIMIT_CPU, failsafe_stop_time, failsafe_stop_time);
-        limit(RLIMIT_AS, mem_limit_in_bytes);
-        limit(RLIMIT_DATA, mem_limit_in_bytes);
-        limit(RLIMIT_STACK, mem_limit_in_bytes);
-        limit(RLIMIT_FSIZE, Config::max_output_size_in_mb * 1024 * 1024);
-    }
-
-    static void set_optional_limits() {
-        limit(RLIMIT_CORE, 0);
-        limit(RLIMIT_LOCKS, 0);
-        limit(RLIMIT_MEMLOCK, 0);
-        limit(RLIMIT_MSGQUEUE, 0);
-        limit(RLIMIT_NICE, 0);
-        limit(RLIMIT_NOFILE, Config::max_file_descriptors);
-        limit(RLIMIT_NPROC, 1);
-        limit(RLIMIT_RSS, RLIM_INFINITY);
-        limit(RLIMIT_RTPRIO, 0);
-        limit(RLIMIT_RTTIME, 0);
-        limit(RLIMIT_SIGPENDING, Config::max_pending_signals);
     }
 
     [[nodiscard]] static bool install_bpf_filter() {
@@ -92,8 +66,23 @@ public:
     explicit Subprocess(parameters _params): params(std::move(_params)) {}
 
     void set_limits() const {
-        set_important_limits();
-        set_optional_limits();
+        const rlim_t mem_limit_in_bytes = params.mem_limit_in_kb * 1024;
+        // Failsafe if tracer-side watchdog fails (should never occur): twice the limit plus 3 s.
+        limit(RLIMIT_CPU, (params.time_limit_in_ms / 500) + 3);
+        limit(RLIMIT_AS, mem_limit_in_bytes);
+        limit(RLIMIT_DATA, mem_limit_in_bytes);
+        limit(RLIMIT_STACK, mem_limit_in_bytes);
+        limit(RLIMIT_FSIZE, Config::max_output_size_in_mb * 1024 * 1024);
+        limit(RLIMIT_CORE, 0);
+        limit(RLIMIT_LOCKS, 0);
+        limit(RLIMIT_MEMLOCK, 0);
+        limit(RLIMIT_MSGQUEUE, 0);
+        limit(RLIMIT_NICE, 0);
+        limit(RLIMIT_NOFILE, Config::max_file_descriptors);
+        limit(RLIMIT_NPROC, 1);
+        limit(RLIMIT_RTPRIO, 0);
+        limit(RLIMIT_RTTIME, 0);
+        limit(RLIMIT_SIGPENDING, Config::max_pending_signals);
     }
 
     void execute_program() const {
