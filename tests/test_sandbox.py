@@ -163,6 +163,13 @@ def test_sandbox_closes_inherited_fds() -> None:
     run_test('prog_fibonacci.rs', wrapper=['/bin/sh', '-c', 'exec "$@" 3</dev/null', 'sh'])
 
 
+def test_sandbox_debug_output(tmp_path: Path) -> None:
+    binary = compile_in_tempdir(tmp_path, Path.cwd() / 'tests' / 'programs' / 'prog_hello_world.cpp')
+    sp = run_sandbox_raw(binary, tmp_path / 'result', print_debug=True)
+    sp.check_returncode()
+    assert re.search(r'^TRACEE PID = \d+: Tracee terminated with exit status 0$', sp.stderr, re.MULTILINE)
+
+
 """ These programs should execute normally """
 
 def test_prog_env_variables() -> None:
